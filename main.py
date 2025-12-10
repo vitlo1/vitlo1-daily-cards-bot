@@ -1,3 +1,4 @@
+from aiogram.types import FSInputFile
 import os
 import random
 from datetime import datetime, date
@@ -120,8 +121,8 @@ async def send_card(message: types.Message, bot: Bot):
     time_key, text = get_theme_and_text()
     card_path = generate_card(text, time_key)
 
-    with open(card_path, "rb") as photo:
-        await message.answer_photo(photo, caption="Ваша ежедневная открытка! 💌")
+   photo = FSInputFile(card_path)
+await message.answer_photo(photo, caption="Ваша ежедневная открытка! 💌")
 
     os.remove(card_path)
 
