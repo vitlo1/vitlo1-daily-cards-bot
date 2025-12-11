@@ -5,14 +5,18 @@ from PIL import Image, ImageDraw, ImageFont
 from aiogram import Bot, Dispatcher, Router, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile
 from aiogram.filters import Command
-from aiogram.types import ChatMember, ChatMemberOwner, ChatMemberAdministrator
 import logging
+import asyncio
 
 # -----------------------------
 # 🔑 Настройки
 # -----------------------------
-BOT_TOKEN = "8385761559:AAGNPCA8dgBGuyHIoBqFS9LZe56yQT8PXhU"
+# Вставьте сюда НОВЫЙ токен от BotFather
+BOT_TOKEN = "8385761559:AAGNPCA8dgBGuyHIoBqFS9LZe56yQT8PXhU" 
 CHANNEL_USERNAME = "@yejcards"
+
+# Имя вашего файла шрифта
+FONT_NAME = "GreatVibes-Regular.ttf"
 
 # -----------------------------
 # 📚 Данные
@@ -32,17 +36,18 @@ HOLIDAYS = {
 }
 
 QUOTES = [
-    "Пусть день будет таким же прекрасным, как твоя улыбка!",
-    "Ты справишься! Верь в себя — у тебя всё получится.",
-    "Сегодня — отличный день для маленького чуда.",
-    "Ты делаешь мир лучше просто своим присутствием.",
-    "Даже маленький шаг — это движение вперёд.",
-    "Ты заслуживаешь счастья, любви и спокойствия.",
-    "Пусть удача будет твоей спутницей сегодня!",
-    "Ты — источник света для многих. Не гасни!",
+    "Пусть день будет таким же прекрасным,\nкак твоя улыбка!",
+    "Ты справишься! Верь в себя —\nу тебя всё получится.",
+    "Сегодня — отличный день\nдля маленького чуда.",
+    "Ты делаешь мир лучше\nпросто своим присутствием.",
+    "Даже маленький шаг —\nэто движение вперёд.",
+    "Ты заслуживаешь счастья,\nлюбви и спокойствия.",
+    "Пусть удача будет твоей\nспутницей сегодня!",
+    "Ты — источник света для многих.\nНе гасни!",
 ]
 
 def generate_card(text: str, time_of_day: str = "day") -> str:
+    # Цвета фона
     bg_color = {
         "morning": (70, 130, 180),
         "day": (135, 206, 235),
@@ -54,19 +59,33 @@ def generate_card(text: str, time_of_day: str = "day") -> str:
     img = Image.new("RGB", (width, height), bg_color)
     draw = ImageDraw.Draw(img)
 
+    # --- ЛОГИКА ЗАГРУЗКИ ШРИФТА ---
+    font_path = FONT_NAME
+    # Проверяем, лежит ли шрифт в папке fonts
+    if os.path.exists(os.path.join("fonts", FONT_NAME)):
+        font_path = os.path.join("fonts", FONT_NAME)
+    
     try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 40)
+        # Для Great Vibes ставим размер 60, так как он тонкий и изящный
+        font = ImageFont.truetype(font_path, 60)
     except OSError:
+        logging.warning(f"Шрифт {font_path} не найден! Использую стандартный.")
         font = ImageFont.load_default()
+    # ------------------------------
 
-    bbox = draw.textbbox((0, 0), text, font=font)
+    # Вычисляем размеры текста (bbox) для центрирования
+    bbox = draw.textbbox((0, 0), text, font=font, align="center")
     text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
+    
+    # Координаты центра
     x = (width - text_width) / 2
     y = (height - text_height) / 2
 
-    draw.text((x + 2, y + 2), text, fill="black", font=font)
-    draw.text((x, y), text, fill="white", font=font)
+    # Рисуем текст с тенью (черная тень + белый текст)
+    # align="center" нужен для многострочного текста
+    draw.multiline_text((x + 3, y + 3), text, fill="black", font=font, align="center")
+    draw.multiline_text((x, y), text, fill="white", font=font, align="center")
 
     filename = f"card_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
     img.save(filename)
@@ -104,17 +123,15 @@ router = Router()
 async def send_card(message: types.Message, bot: Bot):
     user_id = message.from_user.id
 
+    # Проверка подписки
     try:
         chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        if isinstance(chat_member, (ChatMember, ChatMemberOwner, ChatMemberAdministrator)):
-            pass
-        else:
-            await ask_to_subscribe(message)
-            return
+        if chat_member.status not in ["member", "administrator", "creator"]:
+             await ask_to_subscribe(message)
+             return
     except Exception as e:
-        logging.error(f"Ошибка подписки: {e}")
-        await message.answer("Не удалось проверить подписку. Попробуйте позже.")
-        return
+        logging.error(f"Ошибка проверки подписки: {e}")
+        # Если ошибка (например, канал приватный или бот не админ), пропускаем проверку
 
     time_key, text = get_theme_and_text()
     card_path = generate_card(text, time_key)
@@ -122,10 +139,12 @@ async def send_card(message: types.Message, bot: Bot):
     photo = FSInputFile(card_path)
     await message.answer_photo(photo, caption="Ваша ежедневная открытка! 💌")
 
-    os.remove(card_path)
+    if os.path.exists(card_path):
+        os.remove(card_path)
 
 async def ask_to_subscribe(message: types.Message):
-    btn = InlineKeyboardButton(text="Подписаться на канал", url=f"https://t.me/{CHANNEL_USERNAME[1:]}")
+    link = f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}"
+    btn = InlineKeyboardButton(text="Подписаться на канал", url=link)
     kb = InlineKeyboardMarkup(inline_keyboard=[[btn]])
     await message.answer(
         f"Чтобы получать ежедневные открытки, подпишись на канал {CHANNEL_USERNAME}!",
@@ -141,5 +160,4 @@ async def main():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    import asyncio
     asyncio.run(main())
